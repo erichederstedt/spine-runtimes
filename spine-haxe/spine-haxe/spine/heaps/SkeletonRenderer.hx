@@ -32,6 +32,7 @@ package spine.heaps;
 import h2d.BlendMode;
 import h2d.Tile;
 import h3d.scene.Object;
+import h3d.scene.RenderContext;
 import spine.Bone;
 import spine.Color;
 import spine.Physics;
@@ -40,28 +41,25 @@ import spine.Skeleton;
 import spine.SkeletonClipping;
 import spine.SkeletonData;
 import spine.TextureRegion;
-import spine.atlas.TextureAtlasRegion;
 import spine.animation.AnimationState;
 import spine.animation.AnimationStateData;
+import spine.atlas.TextureAtlasRegion;
 import spine.attachments.Attachment;
 import spine.attachments.ClippingAttachment;
 import spine.attachments.MeshAttachment;
 import spine.attachments.RegionAttachment;
 
 /** A Heaps scene object that draws a Spine skeleton. */
-class SkeletonRenderer {
+class SkeletonRenderer extends Object {
 	private static var QUAD_INDICES:Array<Int> = [0, 1, 2, 2, 3, 0];
 
 	public static var clipper(default, never):SkeletonClipping = new SkeletonClipping();
 
-	public final object:Object;
 	public final skeletonData:SkeletonData;
 	public final skeleton:Skeleton;
 	public final stateData:AnimationStateData;
 	public final state:AnimationState;
 
-	public var logicalWidth(default, null):Float = 1.0;
-	public var logicalHeight(default, null):Float = 1.0;
 	public var blendModeOverride(default, null):Null<BlendMode> = null;
 
 	public var beforeUpdateWorldTransforms:SkeletonRenderer->Void = function(_) {};
@@ -71,8 +69,8 @@ class SkeletonRenderer {
 
 	/** Creates a renderer for the specified skeleton data. */
 	public function new(skeletonData:SkeletonData, animationStateData:AnimationStateData = null, ?parent:Object) {
+		super(parent);
 		Bone.yDown = false;
-		this.object = new Object(parent);
 		this.skeletonData = skeletonData;
 		this.skeleton = new Skeleton(skeletonData);
 		this.skeleton.setToSetupPose();
@@ -90,13 +88,15 @@ class SkeletonRenderer {
 		skeleton.update(time);
 		skeleton.updateWorldTransform(Physics.update);
 		afterUpdateWorldTransforms(this);
+	}
+
+	override function emit(ctx:RenderContext) {
 		refresh();
 	}
 
 	/** Synchronizes slot meshes without advancing animation time. */
 	public function refresh():Void {
 		syncSlots();
-		updateLogicalSize();
 	}
 
 	/** Sets the skeleton color multiplier used for rendering. */
@@ -112,7 +112,7 @@ class SkeletonRenderer {
 	}
 
 	/** Returns the current skeleton bounds. */
-	public function getBounds(?clip:Bool = true):Rectangle {
+	public function getSkeletonBounds(?clip:Bool = true):Rectangle {
 		return skeleton.getBounds(clip ? new SkeletonClipping() : null);
 	}
 
@@ -123,7 +123,17 @@ class SkeletonRenderer {
 			slotMesh.dispose();
 		}
 		slotMeshes = [];
-		object.remove();
+		remove();
+	}
+
+	override public function clone(?o:Object):Object {
+		final m:SkeletonRenderer = if (o != null) {
+			cast o;
+		} else {
+			new SkeletonRenderer(skeletonData, stateData, parent);
+		}
+
+		return cast m;
 	}
 
 	private function syncSlots():Void {
@@ -249,19 +259,13 @@ class SkeletonRenderer {
 		return false;
 	}
 
-	private function updateLogicalSize():Void {
-		var bounds = skeleton.getBounds();
-		logicalWidth = Math.max(1.0, bounds.width);
-		logicalHeight = Math.max(1.0, bounds.height);
-	}
-
 	private function ensureSlotMesh(slotIndex:Int):SkeletonMesh {
 		if (slotIndex < slotMeshes.length && slotMeshes[slotIndex] != null)
 			return slotMeshes[slotIndex];
 		while (slotMeshes.length <= slotIndex) {
 			slotMeshes.push(null);
 		}
-		var slotMesh = new SkeletonMesh(object);
+		var slotMesh = new SkeletonMesh(this);
 		slotMeshes[slotIndex] = slotMesh;
 		return slotMesh;
 	}
