@@ -25,12 +25,13 @@
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THE SPINE RUNTIMES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *****************************************************************************/
+*****************************************************************************/
 
 package spine.heaps;
 
 import h2d.BlendMode;
 import h2d.Tile;
+import h3d.mat.Material;
 import h3d.scene.Object;
 import h3d.scene.RenderContext;
 import spine.Bone;
@@ -136,6 +137,16 @@ class SkeletonRenderer extends Object {
 		return cast m;
 	}
 
+	override public function getMaterials(?a:Array<Material>, recursive = true):Array<Material> {
+		if (a == null)
+			a = [];
+		for (slotMesh in slotMeshes) {
+			if (slotMesh != null && slotMesh.material != null)
+				a.push(slotMesh.material);
+		}
+		return a;
+	}
+
 	private function syncSlots():Void {
 		var clipper = SkeletonRenderer.clipper;
 		clipper.clipEnd();
@@ -171,8 +182,8 @@ class SkeletonRenderer extends Object {
 				continue;
 			}
 
-			slotMesh.apply(renderData.texture, renderData.vertices, renderData.uvs, renderData.indices, renderData.blendMode,
-				renderData.premultipliedAlpha, blendModeOverride, renderData.color);
+			slotMesh.apply(renderData.texture, renderData.vertices, renderData.uvs, renderData.indices, renderData.blendMode, renderData.premultipliedAlpha,
+				blendModeOverride, renderData.color);
 			clipper.clipEndWithSlot(slot);
 		}
 
@@ -203,16 +214,16 @@ class SkeletonRenderer extends Object {
 			indices = clipper.clippedTriangles;
 			uvs = clipper.clippedUvs;
 		}
-			return {
-				texture: resolveAttachmentTile(regionAttachment.region),
-				vertices: worldVertices,
-				uvs: uvs,
-				indices: indices,
-				blendMode: slot.data.blendMode,
-				premultipliedAlpha: resolvePremultipliedAlpha(regionAttachment.region),
-				color: multiplyColor(skeleton.color, slot.color, regionAttachment.color)
-			};
-		}
+		return {
+			texture: resolveAttachmentTile(regionAttachment.region),
+			vertices: worldVertices,
+			uvs: uvs,
+			indices: indices,
+			blendMode: slot.data.blendMode,
+			premultipliedAlpha: resolvePremultipliedAlpha(regionAttachment.region),
+			color: multiplyColor(skeleton.color, slot.color, regionAttachment.color)
+		};
+	}
 
 	private function buildMeshRenderData(slot:spine.Slot, meshAttachment:MeshAttachment, clipper:SkeletonClipping):SkeletonRenderData {
 		var verticesLength = meshAttachment.worldVerticesLength;
@@ -227,16 +238,16 @@ class SkeletonRenderer extends Object {
 			indices = clipper.clippedTriangles;
 			uvs = clipper.clippedUvs;
 		}
-			return {
-				texture: resolveAttachmentTile(meshAttachment.region),
-				vertices: worldVertices,
-				uvs: uvs,
-				indices: indices,
-				blendMode: slot.data.blendMode,
-				premultipliedAlpha: resolvePremultipliedAlpha(meshAttachment.region),
-				color: multiplyColor(skeleton.color, slot.color, meshAttachment.color)
-			};
-		}
+		return {
+			texture: resolveAttachmentTile(meshAttachment.region),
+			vertices: worldVertices,
+			uvs: uvs,
+			indices: indices,
+			blendMode: slot.data.blendMode,
+			premultipliedAlpha: resolvePremultipliedAlpha(meshAttachment.region),
+			color: multiplyColor(skeleton.color, slot.color, meshAttachment.color)
+		};
+	}
 
 	private function resolveAttachmentTile(region:TextureRegion):Tile {
 		if (region == null)
