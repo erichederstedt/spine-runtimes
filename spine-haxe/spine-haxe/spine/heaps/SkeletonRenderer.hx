@@ -66,7 +66,9 @@ class SkeletonRenderer extends Object {
 	public var beforeUpdateWorldTransforms:SkeletonRenderer->Void = function(_) {};
 	public var afterUpdateWorldTransforms:SkeletonRenderer->Void = function(_) {};
 
-	private var slotMeshes:Array<SkeletonMesh> = [];
+	// Pool of batch meshes, reused across frames.
+	private var batches:Array<SkeletonMesh> = [];
+	private var activeBatchCount = 0;
 
 	/** Creates a renderer for the specified skeleton data. */
 	public function new(skeletonData:SkeletonData, animationStateData:AnimationStateData = null, ?parent:Object) {
@@ -120,78 +122,95 @@ class SkeletonRenderer extends Object {
 	/** Releases all slot meshes and removes the root object from the scene. */
 	public function dispose():Void {
 		state.clearListeners();
-		for (slotMesh in slotMeshes) {
-			slotMesh.dispose();
-		}
-		slotMeshes = [];
+		for (batch in batches)
+			batch.dispose();
+		batches = [];
 		remove();
 	}
 
-	override public function clone(?o:Object):Object {
-		final m:SkeletonRenderer = if (o != null) {
-			cast o;
-		} else {
-			new SkeletonRenderer(skeletonData, stateData, parent);
-		}
-
-		return cast m;
-	}
-
+	/** Returns materials for all active batch meshes, bypassing the O(n²) recursive
+		scene-graph traversal that Object.getMaterials() would otherwise perform. **/
 	override public function getMaterials(?a:Array<Material>, recursive = true):Array<Material> {
 		if (a == null)
 			a = [];
-		for (slotMesh in slotMeshes) {
-			if (slotMesh != null && slotMesh.material != null)
-				a.push(slotMesh.material);
-		}
+		for (i in 0...activeBatchCount)
+			a.push(batches[i].material);
 		return a;
 	}
 
+	override public function clone(?o:Object):Object {
+		final m:SkeletonRenderer = if (o != null) cast o else new SkeletonRenderer(skeletonData, stateData, parent);
+		return cast m;
+	}
+
 	private function syncSlots():Void {
-		var clipper = SkeletonRenderer.clipper;
+		final clipper = SkeletonRenderer.clipper;
 		clipper.clipEnd();
-		var drawOrder = skeleton.drawOrder;
-		for (slotIndex in 0...drawOrder.length) {
-			var slot = drawOrder[slotIndex];
-			var slotMesh = ensureSlotMesh(slotIndex);
-			slotMesh.setOrder(slotIndex);
+
+		activeBatchCount = 0;
+		var batchMesh:SkeletonMesh = null;
+		var batchTexture:h3d.mat.Texture = null;
+		var batchBlend:spine.BlendMode = cast -1; // invalid sentinel
+		var batchPma = false;
+
+		for (slot in skeleton.drawOrder) {
 			if (slot == null || !slot.bone.active) {
-				slotMesh.hide();
 				if (slot != null)
 					clipper.clipEndWithSlot(slot);
 				continue;
 			}
 
-			var attachment:Attachment = slot.attachment;
-			if (attachment == null) {
-				slotMesh.hide();
+			if (slot.attachment == null) {
 				clipper.clipEndWithSlot(slot);
 				continue;
 			}
 
-			if (Std.isOfType(attachment, ClippingAttachment)) {
-				clipper.clipStart(slot, cast attachment);
-				slotMesh.hide();
+			if (Std.isOfType(slot.attachment, ClippingAttachment)) {
+				clipper.clipStart(slot, cast slot.attachment);
 				continue;
 			}
 
-			var renderData = resolveRenderData(slot, attachment, clipper);
+			final renderData = resolveRenderData(slot, slot.attachment, clipper);
 			if (renderData == null || renderData.indices.length == 0) {
-				slotMesh.hide();
 				clipper.clipEndWithSlot(slot);
 				continue;
 			}
 
-			slotMesh.apply(renderData.texture, renderData.vertices, renderData.uvs, renderData.indices, renderData.blendMode, renderData.premultipliedAlpha,
-				blendModeOverride, renderData.color);
+			// Open a new batch when texture or blend settings change.
+			final tex = renderData.texture.getTexture();
+			if (batchMesh == null
+				|| tex != batchTexture
+				|| renderData.blendMode != batchBlend
+				|| renderData.premultipliedAlpha != batchPma) {
+				batchMesh?.flushBatch();
+				batchMesh = ensureBatch(activeBatchCount);
+				batchMesh.resetBatch(renderData.texture, renderData.blendMode, renderData.premultipliedAlpha, blendModeOverride);
+				batchMesh.setOrder(activeBatchCount);
+				activeBatchCount++;
+				batchTexture = tex;
+				batchBlend = renderData.blendMode;
+				batchPma = renderData.premultipliedAlpha;
+			}
+
+			batchMesh.addSlot(renderData.vertices, renderData.uvs, renderData.indices, renderData.color, renderData.premultipliedAlpha);
 			clipper.clipEndWithSlot(slot);
 		}
 
-		for (slotIndex in drawOrder.length...slotMeshes.length) {
-			if (slotMeshes[slotIndex] != null)
-				slotMeshes[slotIndex].hide();
-		}
+		batchMesh?.flushBatch();
+
+		// Hide unused batches from previous frame.
+		for (i in activeBatchCount...batches.length)
+			batches[i].hide();
+
 		clipper.clipEnd();
+	}
+
+	private function ensureBatch(index:Int):SkeletonMesh {
+		if (index < batches.length)
+			return batches[index];
+		final mesh = new SkeletonMesh(this);
+		batches.push(mesh);
+		return mesh;
 	}
 
 	private function resolveRenderData(slot:spine.Slot, attachment:Attachment, clipper:SkeletonClipping):Null<SkeletonRenderData> {
@@ -226,7 +245,7 @@ class SkeletonRenderer extends Object {
 	}
 
 	private function buildMeshRenderData(slot:spine.Slot, meshAttachment:MeshAttachment, clipper:SkeletonClipping):SkeletonRenderData {
-		var verticesLength = meshAttachment.worldVerticesLength;
+		final verticesLength = meshAttachment.worldVerticesLength;
 		var worldVertices = new Array<Float>();
 		worldVertices.resize(verticesLength);
 		meshAttachment.computeWorldVertices(slot, 0, verticesLength, worldVertices, 0, 2);
@@ -255,7 +274,7 @@ class SkeletonRenderer extends Object {
 		if (Std.isOfType(region.texture, Tile))
 			return cast region.texture;
 		if (Std.isOfType(region, TextureAtlasRegion)) {
-			var atlasRegion:TextureAtlasRegion = cast region;
+			final atlasRegion:TextureAtlasRegion = cast region;
 			if (atlasRegion.page != null && Std.isOfType(atlasRegion.page.texture, Tile))
 				return cast atlasRegion.page.texture;
 		}
@@ -264,21 +283,10 @@ class SkeletonRenderer extends Object {
 
 	private static function resolvePremultipliedAlpha(region:TextureRegion):Bool {
 		if (Std.isOfType(region, TextureAtlasRegion)) {
-			var atlasRegion:TextureAtlasRegion = cast region;
+			final atlasRegion:TextureAtlasRegion = cast region;
 			return atlasRegion.page != null && atlasRegion.page.pma;
 		}
 		return false;
-	}
-
-	private function ensureSlotMesh(slotIndex:Int):SkeletonMesh {
-		if (slotIndex < slotMeshes.length && slotMeshes[slotIndex] != null)
-			return slotMeshes[slotIndex];
-		while (slotMeshes.length <= slotIndex) {
-			slotMeshes.push(null);
-		}
-		var slotMesh = new SkeletonMesh(this);
-		slotMeshes[slotIndex] = slotMesh;
-		return slotMesh;
 	}
 
 	private static function multiplyColor(skeletonColor:Color, slotColor:Color, attachmentColor:Color):Color {

@@ -37,15 +37,17 @@ import h3d.mat.Material;
 import h3d.mat.Pass;
 import h3d.scene.Mesh;
 import h3d.scene.Object;
+import h3d.shader.VertexColorAlpha;
 import spine.Color;
 
-/** A Heaps mesh that draws one Spine slot. */
+/** A Heaps mesh that renders one batch of consecutive same-texture same-blend-mode Spine slots. */
 class SkeletonMesh extends Mesh {
 	private static inline var SLOT_DEPTH_STEP = 0.0001;
 
 	private var geometry:SpineMeshPrimitive;
 	private var heapsMaterial:Material;
 	private var premultiplyAlphaShader:PremultiplyAlphaShader;
+	private var batchHasGeometry = false;
 
 	public function new(?parent:Object) {
 		geometry = new SpineMeshPrimitive();
@@ -53,27 +55,44 @@ class SkeletonMesh extends Mesh {
 		heapsMaterial.mainPass.enableLights = false;
 		heapsMaterial.mainPass.depthWrite = false;
 		heapsMaterial.mainPass.culling = Face.None;
-		// Keep slot ordering local to the skeleton object instead of using a global pass layer.
 		heapsMaterial.mainPass.layer = 0;
+		heapsMaterial.mainPass.addShader(new VertexColorAlpha());
 		premultiplyAlphaShader = new PremultiplyAlphaShader();
 		super(geometry, heapsMaterial, parent);
 	}
 
 	public function setOrder(order:Int):Void {
-		// Heaps alpha sorting ignores scene-graph child order, so give each slot a tiny
-		// local z offset to keep Spine draw order deterministic without leaking through
-		// global pass layers across sibling skeletons.
 		z = order >= 0 ? order * SLOT_DEPTH_STEP : 0.0;
 	}
 
-	public function apply(tile:Tile, vertices:Array<Float>, uvs:Array<Float>, indices:Array<Int>, slotBlendMode:spine.BlendMode, premultipliedAlpha:Bool,
-			blendModeOverride:Null<BlendMode>, color:Color):Void {
+	/** Prepare this mesh for a new batch: set material state and reset geometry. */
+	public function resetBatch(tile:Tile, slotBlendMode:spine.BlendMode, premultipliedAlpha:Bool, blendModeOverride:Null<BlendMode>):Void {
 		heapsMaterial.texture = tile.getTexture();
 		applyPremultiplyAlpha(slotBlendMode, premultipliedAlpha, blendModeOverride);
 		applyBlendMode(slotBlendMode, premultipliedAlpha, blendModeOverride);
-		applyColor(color, premultipliedAlpha);
-		geometry.applyGeometry(vertices, uvs, indices);
-		visible = indices.length > 0;
+		geometry.reset();
+		batchHasGeometry = false;
+	}
+
+	/** Accumulate one slot's geometry into the current batch. */
+	public function addSlot(vertices:Array<Float>, uvs:Array<Float>, indices:Array<Int>, color:Color, premultipliedAlpha:Bool):Void {
+		var r = color.r, g = color.g, b = color.b;
+		final a = color.a;
+		// Match the original material-colour behaviour: PMA blend needs pre-multiplied RGB.
+		if (premultipliedAlpha) {
+			r *= a;
+			g *= a;
+			b *= a;
+		}
+		geometry.addGeometry(vertices, uvs, indices, r, g, b, a);
+		batchHasGeometry = true;
+	}
+
+	/** Upload accumulated geometry and make the mesh visible. */
+	public function flushBatch():Void {
+		if (batchHasGeometry)
+			geometry.flush();
+		visible = batchHasGeometry;
 	}
 
 	public function hide():Void {
@@ -95,26 +114,18 @@ class SkeletonMesh extends Mesh {
 	}
 
 	private function applyBlendMode(slotBlendMode:spine.BlendMode, premultipliedAlpha:Bool, blendModeOverride:Null<BlendMode>):Void {
-		var pass = heapsMaterial.mainPass;
+		final pass = heapsMaterial.mainPass;
 		pass.depth(false, Compare.Always);
 		pass.setPassName("alpha");
 		if (blendModeOverride != null) {
 			pass.setBlendMode(blendModeOverride);
 			return;
 		}
-
 		if (premultipliedAlpha) {
 			setPremultipliedBlendMode(pass, slotBlendMode);
 			return;
 		}
 		pass.setBlendMode(toBlendMode(slotBlendMode));
-	}
-
-	private function applyColor(color:Color, premultipliedAlpha:Bool):Void {
-		if (premultipliedAlpha)
-			heapsMaterial.color.set(color.r * color.a, color.g * color.a, color.b * color.a, color.a);
-		else
-			heapsMaterial.color.set(color.r, color.g, color.b, color.a);
 	}
 
 	private static function setPremultipliedBlendMode(pass:Pass, slotBlendMode:spine.BlendMode):Void {
@@ -134,16 +145,11 @@ class SkeletonMesh extends Mesh {
 
 	public static function toBlendMode(spineBlendMode:spine.BlendMode):BlendMode {
 		return switch spineBlendMode {
-			case normal:
-				BlendMode.Alpha;
-			case additive:
-				BlendMode.Add;
-			case multiply:
-				BlendMode.AlphaMultiply;
-			case screen:
-				BlendMode.Screen;
-			default:
-				BlendMode.Alpha;
+			case normal: BlendMode.Alpha;
+			case additive: BlendMode.Add;
+			case multiply: BlendMode.AlphaMultiply;
+			case screen: BlendMode.Screen;
+			default: BlendMode.Alpha;
 		}
 	}
 }
@@ -157,44 +163,51 @@ private class PremultiplyAlphaShader extends hxsl.Shader {
 	}
 }
 
+/** Primitive that accumulates geometry from multiple slots into a single vertex/index buffer.
+	Vertex layout: position(xyz) + uv(xy) + colour(rgba) = 9 floats. **/
 private class SpineMeshPrimitive extends h3d.prim.DynamicPrimitive {
+	static inline var STRIDE = 9;
+
+	var vertCount = 0;
+	var idxCount = 0;
+
 	public function new() {
-		super(hxd.BufferFormat.POS3D_NORMAL_UV);
+		super(hxd.BufferFormat.POS3D_UV.append("color", hxd.BufferFormat.InputFormat.DVec4));
 	}
 
-	public function applyGeometry(vertices:Array<Float>, uvs:Array<Float>, indices:Array<Int>):Void {
-		var vertexCount = Std.int(vertices.length / 2);
-		var hasGeometry = vertexCount > 0 && indices.length > 0;
-		if (!hasGeometry) {
-			bounds.empty();
-			getBuffer(0);
-			getIndexes(0);
-			flush();
-			return;
-		}
-
-		var buffer = getBuffer(vertexCount);
+	/** Clear write-heads for a new batch. */
+	public function reset():Void {
+		vertCount = 0;
+		idxCount = 0;
 		bounds.empty();
-		for (vertexIndex in 0...vertexCount) {
-			var sourceOffset = vertexIndex * 2;
-			var targetOffset = vertexIndex * 8;
-			var x = vertices[sourceOffset];
-			var y = vertices[sourceOffset + 1];
-			buffer[targetOffset] = x;
-			buffer[targetOffset + 1] = y;
-			buffer[targetOffset + 2] = 0.0;
-			buffer[targetOffset + 3] = 0.0;
-			buffer[targetOffset + 4] = 0.0;
-			buffer[targetOffset + 5] = 1.0;
-			buffer[targetOffset + 6] = sourceOffset + 1 < uvs.length ? uvs[sourceOffset] : 0.0;
-			buffer[targetOffset + 7] = sourceOffset + 1 < uvs.length ? uvs[sourceOffset + 1] : 0.0;
+	}
+
+	/** Append one slot's geometry. Index values are offset by the current vertex count. */
+	public function addGeometry(vertices:Array<Float>, uvs:Array<Float>, indices:Array<Int>, r:Float, g:Float, b:Float, a:Float):Void {
+		final vc = vertices.length >> 1;
+		if (vc == 0 || indices.length == 0)
+			return;
+		final buf = getBuffer(vertCount + vc);
+		for (i in 0...vc) {
+			final src = i * 2;
+			final dst = (vertCount + i) * STRIDE;
+			final x = vertices[src];
+			final y = vertices[src + 1];
+			buf[dst] = x;
+			buf[dst + 1] = y;
+			buf[dst + 2] = 0.0;
+			buf[dst + 3] = src < uvs.length ? uvs[src] : 0.0;
+			buf[dst + 4] = src + 1 < uvs.length ? uvs[src + 1] : 0.0;
+			buf[dst + 5] = r;
+			buf[dst + 6] = g;
+			buf[dst + 7] = b;
+			buf[dst + 8] = a;
 			bounds.addPos(x, y, 0.0);
 		}
-
-		var indexBuffer = getIndexes(indices.length);
-		for (index in 0...indices.length) {
-			indexBuffer[index] = indices[index];
-		}
-		flush();
+		final iBuf = getIndexes(idxCount + indices.length);
+		for (i in 0...indices.length)
+			iBuf[idxCount + i] = indices[i] + vertCount;
+		vertCount += vc;
+		idxCount += indices.length;
 	}
 }
