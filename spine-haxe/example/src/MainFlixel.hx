@@ -25,19 +25,17 @@
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THE SPINE RUNTIMES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *****************************************************************************/
+*****************************************************************************/
 
 package;
 
-import flixelExamples.FlixelState;
 import flixel.FlxG;
 import flixel.FlxGame;
+import flixelExamples.FlixelState;
 import openfl.display.Sprite;
 
-class MainFlixel extends Sprite
-{
-	public function new()
-	{
+class MainFlixel extends Sprite {
+	public function new() {
 		super();
 		addChild(new FlxGame(640, 480, FlixelState));
 		FlxG.autoPause = false;

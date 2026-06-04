@@ -25,24 +25,27 @@
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THE SPINE RUNTIMES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *****************************************************************************/
+*****************************************************************************/
 
 package flixelExamples;
 
-import flixel.ui.FlxButton;
 import flixel.FlxG;
-import spine.flixel.SkeletonSprite;
-import spine.flixel.FlixelTextureLoader;
 import flixel.FlxState;
+import flixel.ui.FlxButton;
 import openfl.utils.Assets;
 import spine.SkeletonData;
 import spine.animation.AnimationStateData;
 import spine.atlas.TextureAtlas;
+import spine.flixel.FlixelTextureLoader;
+import spine.flixel.SkeletonSprite;
 
 class BasicExample extends FlxState {
-	var loadBinary = true;
+	var loadBinary = false;
 
 	var skeletonSprite:SkeletonSprite;
+
+	var looping = false;
+
 	override public function create():Void {
 		FlxG.cameras.bgColor = 0xffa1b2b0;
 
@@ -50,38 +53,65 @@ class BasicExample extends FlxState {
 		button.setPosition(FlxG.width * .75, FlxG.height / 10);
 		add(button);
 
-		var atlas = new TextureAtlas(Assets.getText("assets/raptor.atlas"), new FlixelTextureLoader("assets/raptor-pro.atlas"));
-		var skeletondata = SkeletonData.from(loadBinary ? Assets.getBytes("assets/raptor-pro.skel") : Assets.getText("assets/raptor-pro.json"), atlas, .25);
+		/*
+			var atlas = new TextureAtlas(Assets.getText("assets/raptor.atlas"), new FlixelTextureLoader("assets/raptor-pro.atlas"));
+			var skeletondata = SkeletonData.from(loadBinary ? Assets.getBytes("assets/raptor-pro.skel") : Assets.getText("assets/raptor-pro.json"), atlas, .25);
+		 */
+		var atlas = new TextureAtlas(Assets.getText("assets/symbols_colossal.atlas"), new FlixelTextureLoader("assets/symbols_colossal.atlas"));
+		var skeletondata = SkeletonData.from(loadBinary ? Assets.getBytes("assets/symbols_colossal.skel") : Assets.getText("assets/symbols_colossal.json"),
+			atlas, .25);
 		var animationStateData = new AnimationStateData(skeletondata);
 		animationStateData.defaultMix = 0.25;
 
 		skeletonSprite = new SkeletonSprite(skeletondata, animationStateData);
-		var animation = skeletonSprite.state.setAnimationByName(0, "walk", true).animation;
+		skeletonSprite.skeleton.skinName = "colossal";
+		var animation = skeletonSprite.state.setAnimationByName(0, "idle/idle_1x2", false).animation;
 		skeletonSprite.setBoundingBox(animation);
 		skeletonSprite.screenCenter();
 		add(skeletonSprite);
+
+		var buttonY = 0.0;
+		var loopButton:FlxButton = null;
+		loopButton = new FlxButton(0, 0, "LOOP: " + looping, () -> {
+			looping = !looping;
+			loopButton.text = "LOOP: " + looping;
+		});
+		buttonY += loopButton.height + 0.1;
+		loopButton.setPosition(FlxG.width * .25, buttonY);
+		add(loopButton);
+
+		for (animation in skeletondata.animations) {
+			var button = new FlxButton(0, 0, animation.name, () -> {
+				skeletonSprite.state.clearTracks();
+				skeletonSprite.update(0.0);
+				var animation = skeletonSprite.state.setAnimationByName(0, animation.name, looping).animation;
+				skeletonSprite.setBoundingBox(animation);
+				skeletonSprite.screenCenter();
+			});
+			buttonY += button.height + 0.1;
+			button.setPosition(FlxG.width * .25, buttonY);
+			add(button);
+		}
 
 		super.create();
 
 		trace("loaded");
 	}
 
-	override public function update(elapsed:Float):Void
-		{
-			if (FlxG.keys.anyPressed([RIGHT])) {
-				skeletonSprite.x += 15;
-			}
-			if (FlxG.keys.anyPressed([LEFT])) {
-				skeletonSprite.x -= 15;
-			}
-			if (FlxG.keys.anyPressed([DOWN])) {
-				skeletonSprite.y += 15;
-			}
-			if (FlxG.keys.anyPressed([UP])) {
-				skeletonSprite.y -= 15;
-			}
-
-			super.update(elapsed);
+	override public function update(elapsed:Float):Void {
+		if (FlxG.keys.anyPressed([RIGHT])) {
+			skeletonSprite.x += 15;
+		}
+		if (FlxG.keys.anyPressed([LEFT])) {
+			skeletonSprite.x -= 15;
+		}
+		if (FlxG.keys.anyPressed([DOWN])) {
+			skeletonSprite.y += 15;
+		}
+		if (FlxG.keys.anyPressed([UP])) {
+			skeletonSprite.y -= 15;
 		}
 
+		super.update(elapsed);
+	}
 }

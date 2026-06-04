@@ -25,26 +25,25 @@
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THE SPINE RUNTIMES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *****************************************************************************/
+*****************************************************************************/
 
 package flixelExamples;
 
-import flixel.ui.FlxButton;
-import flixel.group.FlxSpriteGroup;
-import flixel.FlxSprite;
-import flixel.graphics.FlxGraphic;
-import spine.animation.AnimationStateData;
-import openfl.Assets;
-import spine.atlas.TextureAtlas;
-import spine.SkeletonData;
-import spine.flixel.SkeletonSprite;
-import spine.flixel.FlixelTextureLoader;
 import flixel.FlxG;
+import flixel.FlxSprite;
 import flixel.FlxState;
+import flixel.graphics.FlxGraphic;
+import flixel.group.FlxSpriteGroup;
 import flixel.text.FlxText;
+import flixel.ui.FlxButton;
+import openfl.Assets;
+import spine.SkeletonData;
+import spine.animation.AnimationStateData;
+import spine.atlas.TextureAtlas;
+import spine.flixel.FlixelTextureLoader;
+import spine.flixel.SkeletonSprite;
 
-class FlixelState extends FlxState
-{
+class FlixelState extends FlxState {
 	var spineSprite:SkeletonSprite;
 	var sprite:FlxSprite;
 	var sprite2:FlxSprite;
@@ -57,8 +56,7 @@ class FlixelState extends FlxState
 	var scale = 4;
 	var speed:Float;
 
-	override public function create():Void
-	{
+	override public function create():Void {
 		FlxG.cameras.bgColor = 0xffa1b2b0;
 
 		// setting speed of spineboy (450 is the speed to not let him slide)
@@ -76,9 +74,10 @@ class FlixelState extends FlxState
 
 		// creating the text to display overlapping state
 		myText = new FlxText(0, 25, 150, "", 16);
-        myText.alignment = CENTER;
-        group.add(myText);
+		myText.alignment = CENTER;
+		group.add(myText);
 
+		FlxG.switchState(() -> new BasicExample());
 		var button = new FlxButton(0, 0, "Next scene", () -> FlxG.switchState(() -> new BasicExample()));
 		button.setPosition(FlxG.width * .75, FlxG.height / 10);
 		add(button);
@@ -92,14 +91,14 @@ class FlixelState extends FlxState
 		// instructions
 		var groupInstructions = new FlxSpriteGroup();
 		groupInstructions.setPosition(50, 405);
-        groupInstructions.add(new FlxText(0, 0, 200, "Left/Right - Move", 16));
-        groupInstructions.add(new FlxText(0, 25, 150, "Space - Jump", 16));
-        groupInstructions.add(new FlxText(200, 25, 400, "Click the button for the next example", 16));
+		groupInstructions.add(new FlxText(0, 0, 200, "Left/Right - Move", 16));
+		groupInstructions.add(new FlxText(0, 25, 150, "Space - Jump", 16));
+		groupInstructions.add(new FlxText(200, 25, 400, "Click the button for the next example", 16));
 		add(groupInstructions);
 
 		// loading spineboy
 		var atlas = new TextureAtlas(Assets.getText("assets/spineboy.atlas"), new FlixelTextureLoader("assets/spineboy.atlas"));
-		var skeletondata = SkeletonData.from(Assets.getText("assets/spineboy-pro.json"), atlas, 1/scale);
+		var skeletondata = SkeletonData.from(Assets.getText("assets/spineboy-pro.json"), atlas, 1 / scale);
 		var animationStateData = new AnimationStateData(skeletondata);
 		spineSprite = new SkeletonSprite(skeletondata, animationStateData);
 
@@ -166,8 +165,8 @@ class FlixelState extends FlxState
 	}
 
 	var justSetIdle = true;
-	override public function update(elapsed:Float):Void
-	{
+
+	override public function update(elapsed:Float):Void {
 		if (FlxG.overlap(spineSprite, group)) {
 			myText.text = "Overlapping";
 		} else {
@@ -191,11 +190,13 @@ class FlixelState extends FlxState
 			var flipped = false;
 			var deltaX;
 			if (FlxG.keys.anyPressed([RIGHT])) {
-				if (spineSprite.flipX == true) flipped = true;
+				if (spineSprite.flipX == true)
+					flipped = true;
 				spineSprite.flipX = false;
 			}
 			if (FlxG.keys.anyPressed([LEFT])) {
-				if (spineSprite.flipX == false) flipped = true;
+				if (spineSprite.flipX == false)
+					flipped = true;
 				spineSprite.flipX = true;
 			}
 
@@ -211,13 +212,11 @@ class FlixelState extends FlxState
 					spineSprite.state.setAnimationByName(0, "walk", true);
 				}
 			}
-
 		} else if (!jumping && !justSetIdle) {
 			justSetWalking = false;
 			justSetIdle = true;
 			spineSprite.state.setAnimationByName(0, "idle", true);
 		}
-
 
 		super.update(elapsed);
 	}

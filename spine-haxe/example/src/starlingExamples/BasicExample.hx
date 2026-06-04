@@ -25,11 +25,10 @@
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THE SPINE RUNTIMES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *****************************************************************************/
+*****************************************************************************/
 
 package starlingExamples;
 
-import starlingExamples.Scene.SceneManager;
 import openfl.utils.Assets;
 import spine.SkeletonData;
 import spine.animation.AnimationStateData;
@@ -39,23 +38,26 @@ import spine.starling.StarlingTextureLoader;
 import starling.core.Starling;
 import starling.events.TouchEvent;
 import starling.events.TouchPhase;
+import starlingExamples.Scene.SceneManager;
 
 class BasicExample extends Scene {
-	var loadBinary = true;
+	var loadBinary = false;
 
 	public function load():Void {
-		var atlas = new TextureAtlas(Assets.getText("assets/raptor.atlas"), new StarlingTextureLoader("assets/raptor-pro.atlas"));
-		var skeletondata = SkeletonData.from(loadBinary ? Assets.getBytes("assets/raptor-pro.skel") : Assets.getText("assets/raptor-pro.json"), atlas);
+		var atlas = new TextureAtlas(Assets.getText("assets/symbols_colossal.atlas"), new StarlingTextureLoader("assets/symbols_colossal.atlas"));
+		var skeletondata = SkeletonData.from(loadBinary ? Assets.getBytes("assets/symbols_colossal.skel") : Assets.getText("assets/symbols_colossal.json"),
+			atlas);
 		var animationStateData = new AnimationStateData(skeletondata);
 		animationStateData.defaultMix = 0.25;
 
 		var skeletonSprite = new SkeletonSprite(skeletondata, animationStateData);
+		skeletonSprite.skeleton.skinName = "colossal";
 		var bounds = skeletonSprite.skeleton.getBounds();
 		skeletonSprite.scale = Starling.current.stage.stageWidth / bounds.width * 0.5;
 		skeletonSprite.x = Starling.current.stage.stageWidth / 2;
 		skeletonSprite.y = Starling.current.stage.stageHeight * 0.9;
 
-		skeletonSprite.state.setAnimationByName(0, "walk", true);
+		skeletonSprite.state.setAnimationByName(0, "idle/idle_1x3", true);
 
 		addChild(skeletonSprite);
 		juggler.add(skeletonSprite);
